@@ -1,1 +1,2 @@
-import HHLLean.Basic
+import HHLLean.Language
+import HHLLean.Triples
