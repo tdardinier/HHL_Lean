@@ -19,6 +19,7 @@ def LNot {α : Type} (b : BExp α) : BExp α :=
 inductive Stmt (α : Type) : Type where
   | skip : Stmt α
   | assign : Var → Exp α → Stmt α
+  | havoc : Var → Stmt α
   | seq : Stmt α → Stmt α → Stmt α
   | branch : Stmt α → Stmt α → Stmt α
   | loop : Stmt α → Stmt α
@@ -43,6 +44,8 @@ inductive BigStep {α : Type} : Stmt α → State α → State α → Prop where
     BigStep Stmt.skip σ σ
   | assign (x e σ) :
     BigStep (Stmt.assign x e) σ (σ[x ↦ e σ])
+  | havoc (x v σ) :
+    BigStep (Stmt.havoc x) σ (σ[x ↦ v])
   | seq (C₁ C₂ σ σ' σ'') (hS : BigStep C₁ σ σ'')
       (hT : BigStep C₂ σ'' σ') :
     BigStep (C₁; C₂) σ σ'
@@ -206,7 +209,7 @@ lemma in_loop_then_iter {α : Type} {C C_loop : Stmt α} {S : Set (State α)} {�
       exact hin
     | _ => contradiction
 
-
+@[simp]
 lemma sem_iter {α : Type} (C : Stmt α) (S : Set (State α)) :
     sem (Stmt.loop C) S = ⋃ n : ℕ, Nat.iterate (sem C) n S := by
   apply Set.ext
@@ -227,3 +230,53 @@ lemma sem_iter {α : Type} (C : Stmt α) (S : Set (State α)) :
   rcases hn with ⟨n, in_iter_n⟩
   have hh := sem_iter_one C S n
   aesop
+
+@[grind]
+lemma in_inter_iff {α : Type} (S₁ S₂ : Set (State α)) (σ' : State α) :
+    (S₁ ∩ S₂) σ' ↔ S₁ σ' ∧ S₂ σ' :=
+  by
+  aesop
+
+@[simp]
+lemma sem_assume {α : Type} (b : BExp α) (S : Set (State α)) :
+    sem (Stmt.assume b) S = S ∩ b :=
+    by
+      apply funext
+      grind
+
+#check Set.mem_iUnion
+
+@[simp]
+lemma in_indexed_union {α β : Type} (f : β → Set (State α)) (σ' : State α) :
+    (⋃ x, f x) σ' ↔ ∃ x, f x σ' :=
+    Set.mem_iUnion
+
+@[simp]
+lemma sem_indexed_union {α β : Type} (C : Stmt α) (f : β → Set (State α)) :
+    sem C (⋃ x, f x) = ⋃ x, sem C (f x) := by
+  apply funext
+  intro σ'
+  simp
+  apply Iff.intro
+  {
+    intro h
+    have h := in_semE h
+    rcases h with ⟨σ, hin, step⟩
+    simp at hin
+    grind
+  }
+  {
+    intro h
+    rcases h with ⟨x, σ, hin, step⟩
+    apply in_semI
+    aesop
+  }
+
+@[simp]
+lemma sem_assign {α : Type} (S : Set (State α)) (x : Var) (e : Exp α) :
+  sem (Stmt.assign x e) S =  {σ' | ∃σ, S σ ∧ σ' = σ[x ↦ e σ]} :=
+  by
+    apply funext
+    intro σ'
+    simp [sem]
+    grind
