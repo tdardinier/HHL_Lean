@@ -1,7 +1,7 @@
-name = "HHL_Lean"
+name = "MonadicHHL"
 version = "0.1.0"
 keywords = ["math"]
-defaultTargets = ["HHLLean"]
+defaultTargets = ["MonadicHHL"]
 
 [leanOptions]
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
@@ -14,4 +14,4 @@ name = "mathlib"
 scope = "leanprover-community"
 
 [[lean_lib]]
-name = "HHLLean"
+name = "MonadicHHL"
