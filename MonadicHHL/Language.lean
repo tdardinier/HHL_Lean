@@ -60,17 +60,20 @@ lemma simpler_HypraM (α val : Type) :
 def HypraM.pure {α val : Type} (v : val) : HypraM α val
   | σ => {(some v, σ)}
 
+def rel_with
+  {α val0 val1 : Type}
+  (C : val0 → HypraM α val1)
+  (p : Option val0 × State α)
+  (p' : Option val1 × State α)
+   : Prop :=
+  match p with
+  | (none, σ) => p' = (none, σ)
+  | (some v, σ) => p' ∈ C v σ
+
 -- bind, seq
 def HypraM.bind {α val1 val2 : Type} (C₁ : HypraM α val1) (C₂ : val1 → HypraM α val2)
   : HypraM α val2 :=
-  fun σ =>
-    { y |
-      ∃ x ∈ C₁ σ,
-      (
-        match x with
-        | (none, σ) => y = (none, σ)
-        | (some v, σ) => y ∈ C₂ v σ
-      )}
+  fun σ => { y | ∃ x ∈ C₁ σ, rel_with C₂ x y}
 
 instance HypraM.Monad {α : Type} : Monad (HypraM α) where
   pure := HypraM.pure
@@ -84,7 +87,7 @@ instance HypraM.LawfulMonad {α : Type} : LawfulMonad (HypraM α) :=
         simp [Bind.bind, Pure.pure]
         apply funext
         intro x
-        simp [HypraM.bind, HypraM.pure]
+        simp [HypraM.bind, HypraM.pure, rel_with]
     bind_pure_comp  :=
       sorry
     bind_assoc := sorry
@@ -140,24 +143,108 @@ def HypraM.havoc {α : Type} (x : Var) : HypraM α Unit
 def HypraM.branch {α val : Type} (C₁ C₂ : HypraM α val) : HypraM α val
   | σ => C₁ σ ∪ C₂ σ
 
-def rel_with
-  {α val : Type} (C : val → HypraM α val) :
-  Set (Option val × State α) → Set (Option val × State α)
-
- : Prop :=
 
 
-def semify {α val : Type} (C : val → HypraM α val) :
-  Set (Option val × State α) → Set (Option val × State α)
-  | S =>
-    --{y | ∃ x ∈ S, y ∈ C x.2}
-    { p' |
-      ∃ p ∈ S,
-      (
-        match p with
-        | (none, σ) => p' = (none, σ)
-        | (some v, σ) => p' ∈ C v σ
-      )}
+def semify {α val0 val1 : Type} (C : val0 → HypraM α val1) :
+  Set (Option val0 × State α) → Set (Option val1 × State α)
+  | S => { p' | ∃ p ∈ S, rel_with C p p'}
+
+/-
+lemma bind_semify
+  {α val0 val1 val2 : Type}
+  (C₁ : val0 → HypraM α val1)
+  (C₂ : val1 → HypraM α val2)
+   S :
+ semify (C₁ >>= C₂) S
+ = semify C₂ (semify C₁ S) := by
+-/
+
+lemma rel_with_none_then_none
+  {α val0 val1 : Type}
+  {C : val0 → HypraM α val1}
+  {p1 : Option val1 × State α}
+  {σ : State α}
+  (h : rel_with C (none, σ) p1) :
+  p1 = (none, σ) := by
+  rw [h]
+
+lemma rel_with_trans
+  {α val0 val1 val2 : Type}
+  {C₁ : val0 → HypraM α val1}
+  {C₂ : val1 → HypraM α val2}
+  {p0 : Option val0 × State α}
+  {p1 : Option val1 × State α}
+  {p2 : Option val2 × State α}
+  (h1 : rel_with C₁ p0 p1)
+  (h2 : rel_with C₂ p1 p2) :
+  rel_with (fun v0 => C₁ v0 >>=  C₂) p0 p2 := by
+  simp [rel_with, Bind.bind, HypraM.bind]
+  rcases p0 with ⟨v0, σ0⟩
+  cases v0
+  {
+    simp
+    have h := rel_with_none_then_none h1
+    rw [h] at h2
+    apply rel_with_none_then_none h2
+  }
+  simp
+  rw [rel_with] at h1
+  apply Exists.intro p1.1
+  apply Exists.intro p1.2
+  simp [h1]
+  simp [rel_with] at h2
+  exact h2
+
+lemma rel_with_trans_rev
+  {α val0 val1 val2 : Type}
+  {C₁ : val0 → HypraM α val1}
+  {C₂ : val1 → HypraM α val2}
+  {p0 : Option val0 × State α}
+  {p2 : Option val2 × State α}
+  (hrel : rel_with (fun v0 => C₁ v0 >>= C₂) p0 p2) :
+  ∃ p1 : Option val1 × State α,
+    rel_with C₁ p0 p1 ∧ rel_with C₂ p1 p2 := by
+  simp [rel_with]
+  simp [rel_with, Bind.bind, HypraM.bind] at hrel
+  rcases p0 with ⟨v0, σ0⟩
+  cases v0
+  {
+    simp
+    simp [hrel]
+  }
+  simp
+  simp at hrel
+  exact hrel
+
+lemma semify_bind
+  {α val0 val1 val2 : Type}
+  {C₁ : val0 → HypraM α val1}
+  {C₂ : val1 → HypraM α val2} :
+  semify (fun v0 => C₁ v0 >>=  C₂) = semify C₂ ∘ semify C₁ :=
+  by
+    apply funext
+    intro S
+    simp [semify]
+    apply Set.ext
+    intro p2
+    simp
+    apply Iff.intro
+    {
+      intro h
+      rcases h with ⟨v0, σ0, hrel⟩
+      rcases hrel with ⟨hS, hrel⟩
+      have h := rel_with_trans_rev hrel
+      aesop
+    }
+    {
+      intro h
+      rcases h with ⟨v1, σ1, hrel⟩
+      rcases hrel with ⟨⟨v0, σ0, hS, hrel1⟩, hrel2⟩
+      apply Exists.intro v0
+      apply Exists.intro σ0
+      simp [hS]
+      exact rel_with_trans hrel1 hrel2
+    }
 
 abbrev semify_unit {α : Type} (C : HypraM α Unit) :
   Set (Option Unit × State α) → Set (Option Unit × State α)
@@ -207,7 +294,7 @@ lemma if_then_else_same_as_branch_assume {α val : Type} (b : BExp α)
 by
   apply funext
   intro x
-  simp [HypraM.branch, Bind.bind, HypraM.bind, HypraM.assume, LNot, HypraM.evalBExp]
+  simp [HypraM.branch, Bind.bind, HypraM.bind, HypraM.assume, LNot, HypraM.evalBExp, rel_with]
   aesop
 
 def increment_until (x : Var) (limit : Nat) : HypraM Nat Unit :=
@@ -235,15 +322,18 @@ def HypraM.whileB {α} (b : BExp α) (C : HypraM α Unit) : HypraM α Unit :=
       C
 
 
-def triple_val {α val : Type}
-  (P : Set (Option val × State α) → Prop)
-  (C : val → HypraM α val)
-  (Q : Set (Option val × State α) → Prop)
+def triple_val {α val1 val2 : Type}
+  (P : Set (Option val1 × State α) → Prop)
+  (C : val1 → HypraM α val2)
+  (Q : Set (Option val2 × State α) → Prop)
 :=
   ∀ S, P S → Q (semify C S)
 
 abbrev hyperassertion_unit (α : Type) : Type
 := Set (Option Unit × State α) → Prop
+
+abbrev hyperassertion (α val : Type) : Type
+:= Set (Option val × State α) → Prop
 
 def triple_unit {α : Type}
   (P : hyperassertion_unit α)
@@ -258,80 +348,24 @@ lemma semify_bind_unit
    S :
  semify_unit (do C₁; C₂) S
  = semify_unit C₂ (semify_unit C₁ S) := by
-  simp [semify, Bind.bind, HypraM.bind]
-  apply Set.ext
-  intro σ2
-  apply Iff.intro
-  {
-    intro h
-    simp at h
-    rcases h with ⟨v0, σ0, ⟨h, hh⟩⟩
-    simp
-    cases v0
-    {
-      simp at hh
-      apply Exists.intro none
-      apply Exists.intro σ0
-      apply And.intro
-      {
-        apply Exists.intro none
-        apply Exists.intro σ0
-        simp
-        exact h
-      }
-      {
-        simp
-        exact hh
-      }
-    }
-    simp at hh
-    rcases hh with ⟨v1, σ1, ⟨h1, hh1⟩⟩
-    cases v1
-    {
-      simp at hh1
-      apply Exists.intro none
-      apply Exists.intro σ1
-      apply And.intro
-      {
-        apply Exists.intro (some ())
-        apply Exists.intro σ0
-        apply And.intro h
-        simp [h1]
-      }
-      {
-        simp [hh1]
-      }
-    }
-    {
-      simp at hh1
-      apply Exists.intro (some ())
-      apply Exists.intro σ1
-      apply And.intro
-      {
-        apply Exists.intro (some ())
-        apply Exists.intro σ0
-        simp [h, h1]
-      }
-      {
-        simp [hh1]
-      }
-    }
-  }
-  {
-    simp
-    intro v1 σ1 v0 σ0 h0 h1 h2
-    apply Exists.intro v0
-    apply Exists.intro σ0
-    simp [h0]
-    cases v0
-    · aesop
-    simp
-    simp at h1
-    apply Exists.intro v1
-    apply Exists.intro σ1
-    aesop
-  }
+  simp [semify_bind]
 
+lemma rule_seq
+  {α val0 val1 val2 : Type}
+  {P : hyperassertion α val0}
+  {R : hyperassertion α val1}
+  {Q : hyperassertion α val2}
+  {C₁ : val0 → HypraM α val1}
+  {C₂ : val1 → HypraM α val2}
+  (h1 : triple_val P C₁ R)
+  (h2 : triple_val R C₂ Q) :
+  triple_val P (fun v0 => C₁ v0 >>= C₂) Q
+  := by
+    simp [triple_val]
+    intro S hpre
+    simp [semify_bind]
+    rw [triple_val] at h1 h2
+    aesop
 
 lemma rule_seq_unit
   {α : Type}
@@ -340,12 +374,17 @@ lemma rule_seq_unit
   (h1 : triple_unit P C₁ R)
   (h2 : triple_unit R C₂ Q) :
   triple_unit P (do C₁; C₂) Q
-  := by
-    simp [triple_unit]
-    intro S hpre
-    rw [semify_bind_unit C₁ C₂ S]
-    rw [triple_unit] at h1 h2
-    aesop
+  := rule_seq h1 h2
+
+/-
+lemma semify_bind
+  {α val0 val1 val2 : Type}
+  {C₁ : val0 → HypraM α val1}
+  {C₂ : val1 → HypraM α val2} :
+  semify (fun v0 => C₁ v0 >>=  C₂) = semify C₂ ∘ semify C₁ :=
+  by
+-/
+
 
 /-
 abbrev HypraM (α val : Type) : Type :=
