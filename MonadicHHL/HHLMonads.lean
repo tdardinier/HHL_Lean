@@ -3,6 +3,164 @@ import Mathlib.Order.CompleteBooleanAlgebra
 import Mathlib.Order.Lattice
 import Mathlib.Order.Basic
 
+lemma prove_prop_by_eq {α : Type} {x y : α}
+  (P : α → Prop)
+  (h : x = y) :
+  P x ↔ P y := by
+    rw [h]
+
+class HHL (M : Type _ → Type _) [Monad M] where
+  elemType : Type _ → Type _
+  relWith : {α β : Type _} → (α → M β) → elemType α → elemType β → Prop
+  bind_rel {σ α₁ α₂ : Type}
+    (C₁ : α₀ → M α₁) (C₂ : α₁ → M α₂)
+    (p₀ : elemType α₀) (p₂ : elemType α₂) :
+      relWith (fun v₁ ↦ bind (C₁ v₁) C₂) p₀ p₂
+      ↔ ∃ p₁, relWith C₁ p₀ p₁ ∧ relWith C₂ p₁ p₂
+
+section
+variable {M : Type _ → Type _} [HHL M]  -- pretend we live in a world with a MyClass α
+
+
+def semify  {σ α₁ α₂ : Type}
+  (C : α₁ → M σ α₂) : Set (ElemType σ α₁) → Set (ElemType σ α₂) :=
+  fun S => { p' | ∃ p ∈ S, rel_with C p p'}
+
+
+lemma semify_bind {σ α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M σ α₂)
+  (C₂ : α₂ → M σ α₃)
+  (S : Set (ElemType σ α₁))
+  :
+ semify (fun v₁ ↦ bind (C₁ v₁) C₂) S = semify C₂ (semify C₁ S)
+ := by
+  simp [semify]
+  apply Set.ext
+  intro p'
+  simp
+  have h := interaction_bind_rel C₁ C₂
+  aesop
+
+def hyperassertion (σ α : Type) : Type :=
+  Set (ElemType σ α) → Prop
+
+def W (σ α₁ α₂ : Type) : Type :=
+  hyperassertion σ α₂ → hyperassertion σ α₁
+
+def WP {σ α₁ α₂ : Type}
+  (C : α₁ → M σ α₂) : W σ α₁ α₂ :=
+  fun Q S => Q (semify C S)
+
+lemma WP_bind {σ α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M σ α₂)
+  (C₂ : α₂ → M σ α₃) :
+  WP (fun v₁ => C₁ v₁ >>= C₂) = (WP C₁) ∘ (WP C₂)
+  := by
+    apply funext
+    intro Q
+    apply funext
+    intro S
+    apply propext
+    simp [WP, Bind.bind]
+    apply prove_prop_by_eq
+    have h := semify_bind C₁ C₂ S
+    aesop
+
+
+namespace StateNonDetAlt
+
+-- Parameters
+
+-- Computational monad:
+def M (σ α : Type) : Type :=
+  σ → Set (α × σ)
+
+def pure {σ α : Type} (x : α) : M σ α :=
+  fun σ => {(x, σ)}
+
+def bind {σ α₁ α₂ : Type}
+  (C₁ : M σ α₁) (C₂ : α₁ → M σ α₂) : M σ α₂ :=
+  fun σ => (⋃p' ∈ C₁ σ, C₂ p'.1 p'.2)
+
+instance (σ : Type) : Monad (M σ) where
+  pure := pure
+  bind := bind
+
+-- Abstraction in the logic
+def ElemType (σ α : Type) : Type :=
+  α × σ
+
+def rel_with {σ α₁ α₂ : Type}
+  (C : α₁ → M σ α₂) (p : ElemType σ α₁) (p' : ElemType σ α₂)
+   : Prop :=
+  p' ∈ C p.1 p.2
+
+-- Sequential composition
+
+lemma interaction_bind_rel {σ α₁ α₂ : Type}
+  (C₁ : α₀ → M σ α₁)
+  (C₂ : α₁ → M σ α₂)
+  (p₀ : ElemType σ α₀)
+  (p₂ : ElemType σ α₂) :
+  rel_with (fun v₁ ↦ bind (C₁ v₁) C₂) p₀ p₂
+↔ ∃ p₁, rel_with C₁ p₀ p₁ ∧ rel_with C₂ p₁ p₂
+:= by
+  simp [rel_with, bind]
+  aesop
+
+-------------------------
+-------- Generic --------
+-------------------------
+
+def semify {σ α₁ α₂ : Type}
+  (C : α₁ → M σ α₂) : Set (ElemType σ α₁) → Set (ElemType σ α₂) :=
+  fun S => { p' | ∃ p ∈ S, rel_with C p p'}
+
+
+lemma semify_bind {σ α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M σ α₂)
+  (C₂ : α₂ → M σ α₃)
+  (S : Set (ElemType σ α₁))
+  :
+ semify (fun v₁ ↦ bind (C₁ v₁) C₂) S = semify C₂ (semify C₁ S)
+ := by
+  simp [semify]
+  apply Set.ext
+  intro p'
+  simp
+  have h := interaction_bind_rel C₁ C₂
+  aesop
+
+def hyperassertion (σ α : Type) : Type :=
+  Set (ElemType σ α) → Prop
+
+def W (σ α₁ α₂ : Type) : Type :=
+  hyperassertion σ α₂ → hyperassertion σ α₁
+
+def WP {σ α₁ α₂ : Type}
+  (C : α₁ → M σ α₂) : W σ α₁ α₂ :=
+  fun Q S => Q (semify C S)
+
+lemma WP_bind {σ α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M σ α₂)
+  (C₂ : α₂ → M σ α₃) :
+  WP (fun v₁ => C₁ v₁ >>= C₂) = (WP C₁) ∘ (WP C₂)
+  := by
+    apply funext
+    intro Q
+    apply funext
+    intro S
+    apply propext
+    simp [WP, Bind.bind]
+    apply prove_prop_by_eq
+    have h := semify_bind C₁ C₂ S
+    aesop
+
+end StateNonDetAlt
+
+
+
+
 universe u v w
 
 section SetBaseMonad
@@ -250,11 +408,6 @@ abbrev MonadT : Type _ :=
   (Type _ → Type _) → Type _ → Type _
 
 
-lemma prove_prop_by_eq {α : Type} {x y : α}
-  (P : α → Prop)
-  (h : x = y) :
-  P x ↔ P y := by
-    rw [h]
 
 
 -- Do we even need the set in the computation monad?
@@ -464,99 +617,6 @@ lemma WP_bind {σ α₁ α₂ α₃ : Type}
     aesop
 
 end StateNonDet
-
-
-namespace StateNonDetAlt
-
--- Parameters
-
--- Computational monad:
-def M (σ α : Type) : Type :=
-  σ → Set (α × σ)
-
-def pure {σ α : Type} (x : α) : M σ α :=
-  fun σ => {(x, σ)}
-
-def bind {σ α₁ α₂ : Type}
-  (C₁ : M σ α₁) (C₂ : α₁ → M σ α₂) : M σ α₂ :=
-  fun σ => (⋃p' ∈ C₁ σ, C₂ p'.1 p'.2)
-
-instance (σ : Type) : Monad (M σ) where
-  pure := pure
-  bind := bind
-
--- Abstraction in the logic
-def ElemType (σ α : Type) : Type :=
-  α × σ
-
-def rel_with {σ α₁ α₂ : Type}
-  (C : α₁ → M σ α₂) (p : ElemType σ α₁) (p' : ElemType σ α₂)
-   : Prop :=
-  p' ∈ C p.1 p.2
-
--- Sequential composition
-
-lemma interaction_bind_rel {σ α₁ α₂ : Type}
-  (C₁ : α₀ → M σ α₁)
-  (C₂ : α₁ → M σ α₂)
-  (p₀ : ElemType σ α₀)
-  (p₂ : ElemType σ α₂) :
-  rel_with (fun v₁ ↦ bind (C₁ v₁) C₂) p₀ p₂
-↔ ∃ p₁, rel_with C₁ p₀ p₁ ∧ rel_with C₂ p₁ p₂
-:= by
-  simp [rel_with, bind]
-  aesop
-
--------------------------
--------- Generic --------
--------------------------
-
-def semify {σ α₁ α₂ : Type}
-  (C : α₁ → M σ α₂) : Set (ElemType σ α₁) → Set (ElemType σ α₂) :=
-  fun S => { p' | ∃ p ∈ S, rel_with C p p'}
-
-
-lemma semify_bind {σ α₁ α₂ α₃ : Type}
-  (C₁ : α₁ → M σ α₂)
-  (C₂ : α₂ → M σ α₃)
-  (S : Set (ElemType σ α₁))
-  :
- semify (fun v₁ ↦ bind (C₁ v₁) C₂) S = semify C₂ (semify C₁ S)
- := by
-  simp [semify]
-  apply Set.ext
-  intro p'
-  simp
-  have h := interaction_bind_rel C₁ C₂
-  aesop
-
-def hyperassertion (σ α : Type) : Type :=
-  Set (ElemType σ α) → Prop
-
-def W (σ α₁ α₂ : Type) : Type :=
-  hyperassertion σ α₂ → hyperassertion σ α₁
-
-def WP {σ α₁ α₂ : Type}
-  (C : α₁ → M σ α₂) : W σ α₁ α₂ :=
-  fun Q S => Q (semify C S)
-
-lemma WP_bind {σ α₁ α₂ α₃ : Type}
-  (C₁ : α₁ → M σ α₂)
-  (C₂ : α₂ → M σ α₃) :
-  WP (fun v₁ => C₁ v₁ >>= C₂) = (WP C₁) ∘ (WP C₂)
-  := by
-    apply funext
-    intro Q
-    apply funext
-    intro S
-    apply propext
-    simp [WP, Bind.bind]
-    apply prove_prop_by_eq
-    have h := semify_bind C₁ C₂ S
-    aesop
-
-end StateNonDetAlt
-
 
 
 semify (fun v₁ ↦ bind (C₁ v₁) C₂) S = semify C₂ (semify C₁ S)
