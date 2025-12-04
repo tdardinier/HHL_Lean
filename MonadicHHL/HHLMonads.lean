@@ -10,27 +10,30 @@ lemma prove_prop_by_eq {α : Type} {x y : α}
     rw [h]
 
 class HHL (M : Type _ → Type _) [Monad M] where
-  elemType : Type _ → Type _
+  elemType (α : Type _) : Type _
   relWith : {α β : Type _} → (α → M β) → elemType α → elemType β → Prop
-  bind_rel {σ α₁ α₂ : Type}
+  bind_rel
+    {α₀ α₁ α₂ : Type _}
     (C₁ : α₀ → M α₁) (C₂ : α₁ → M α₂)
     (p₀ : elemType α₀) (p₂ : elemType α₂) :
       relWith (fun v₁ ↦ bind (C₁ v₁) C₂) p₀ p₂
       ↔ ∃ p₁, relWith C₁ p₀ p₁ ∧ relWith C₂ p₁ p₂
 
 section
-variable {M : Type _ → Type _} [HHL M]  -- pretend we live in a world with a MyClass α
+
+namespace HHL
+
+variable {M : Type _ → Type _} [Monad M] [HHL M]  -- pretend we live in a world with a MyClass α
 
 
-def semify  {σ α₁ α₂ : Type}
-  (C : α₁ → M σ α₂) : Set (ElemType σ α₁) → Set (ElemType σ α₂) :=
-  fun S => { p' | ∃ p ∈ S, rel_with C p p'}
+def semify {α₁ α₂ : Type}
+  (C : α₁ → M α₂) : Set (elemType M α₁) → Set (elemType M α₂) :=
+  fun S => { p' | ∃ p ∈ S, relWith C p p'}
 
-
-lemma semify_bind {σ α₁ α₂ α₃ : Type}
-  (C₁ : α₁ → M σ α₂)
-  (C₂ : α₂ → M σ α₃)
-  (S : Set (ElemType σ α₁))
+lemma semify_bind {α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M α₂)
+  (C₂ : α₂ → M α₃)
+  (S : Set (elemType M α₁))
   :
  semify (fun v₁ ↦ bind (C₁ v₁) C₂) S = semify C₂ (semify C₁ S)
  := by
@@ -38,22 +41,22 @@ lemma semify_bind {σ α₁ α₂ α₃ : Type}
   apply Set.ext
   intro p'
   simp
-  have h := interaction_bind_rel C₁ C₂
+  have h := bind_rel C₁ C₂
   aesop
 
-def hyperassertion (σ α : Type) : Type :=
-  Set (ElemType σ α) → Prop
+def hyperassertion (α : Type) : Type :=
+  Set (elemType M α) → Prop
 
-def W (σ α₁ α₂ : Type) : Type :=
-  hyperassertion σ α₂ → hyperassertion σ α₁
+def W (α₁ α₂ : Type) : Type :=
+  @hyperassertion M _ _ α₂ → @hyperassertion M _ _ α₁
 
-def WP {σ α₁ α₂ : Type}
-  (C : α₁ → M σ α₂) : W σ α₁ α₂ :=
+def WP {α₁ α₂ : Type}
+  (C : α₁ → M α₂) : @W M _ _ α₁ α₂ :=
   fun Q S => Q (semify C S)
 
-lemma WP_bind {σ α₁ α₂ α₃ : Type}
-  (C₁ : α₁ → M σ α₂)
-  (C₂ : α₂ → M σ α₃) :
+lemma WP_bind {α₁ α₂ α₃ : Type}
+  (C₁ : α₁ → M α₂)
+  (C₂ : α₂ → M α₃) :
   WP (fun v₁ => C₁ v₁ >>= C₂) = (WP C₁) ∘ (WP C₂)
   := by
     apply funext
@@ -61,11 +64,59 @@ lemma WP_bind {σ α₁ α₂ α₃ : Type}
     apply funext
     intro S
     apply propext
-    simp [WP, Bind.bind]
+    simp [WP]
     apply prove_prop_by_eq
     have h := semify_bind C₁ C₂ S
     aesop
 
+instance : HHL Id where
+  elemType := Id
+  relWith f p p' := p' = f p
+  bind_rel := by
+    aesop
+
+instance (σ : Type) : HHL (StateM σ) where
+  elemType α := α × σ
+  relWith C p p' := p' = C p.1 p.2
+  bind_rel := by
+    aesop
+
+def Set.pure {α : Type} : α → Set α
+  | a => {a}
+
+def Set.bind {α β : Type} : Set α → (α → Set β) → Set β
+  | S, f => {b | ∃a, a ∈ S ∧ b ∈ f a}
+
+instance : Monad Set where
+  pure := Set.pure
+  bind := Set.bind
+
+instance : HHL Set where
+  elemType := Id
+  relWith C p p' := p' ∈ C p
+  bind_rel := by
+    aesop
+
+instance (σ : Type) : HHL (StateT σ Set) where
+  elemType α := α × σ
+  relWith C p p' := p' ∈ C p.1 p.2
+  bind_rel := by
+    simp [Bind.bind, StateT.bind, Set.bind]
+
+instance : HHL Option where
+  elemType α := Option α
+  relWith f p p' :=
+    match p with
+    | none => p' = none
+    | some v => p' = some (f v)
+  bind_rel := by
+    simp [Bind.bind, Option.bind]
+    sorry
+
+
+
+
+end HHL
 
 namespace StateNonDetAlt
 
@@ -173,15 +224,7 @@ def SetT (m : Type u -> Type v) (α : Type u) : Type _ :=
   m (Set α)
 -/
 
-def Set.pure {α : Type} : α → Set α
-  | a => {a}
 
-def Set.bind {α β : Type} : Set α → (α → Set β) → Set β
-  | S, f => {b | ∃a, a ∈ S ∧ b ∈ f a}
-
-instance : Monad Set where
-  pure := Set.pure
-  bind := Set.bind
 
 instance Set.LawfulMonad : LawfulMonad Set :=
   {
