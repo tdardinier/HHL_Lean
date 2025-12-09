@@ -3,11 +3,29 @@ import Mathlib.Order.CompleteBooleanAlgebra
 import Mathlib.Order.Lattice
 import Mathlib.Order.Basic
 
+-------------------------------
+------- Preliminaries ---------
+-------------------------------
+
+def Set.pure {α : Type} : α → Set α
+  | a => {a}
+
+def Set.bind {α β : Type} : Set α → (α → Set β) → Set β
+  | S, f => {b | ∃a, a ∈ S ∧ b ∈ f a}
+
+instance : Monad Set where
+  pure := Set.pure
+  bind := Set.bind
+
 lemma prove_prop_by_eq {α : Type} {x y : α}
   (P : α → Prop)
   (h : x = y) :
   P x ↔ P y := by
     rw [h]
+
+--------------------------------
+-------- HHL typeclass ---------
+--------------------------------
 
 class HHL (M : Type _ → Type _) [Monad M] where
   elemType (α : Type _) : Type _
@@ -69,11 +87,178 @@ lemma WP_bind {α₁ α₂ α₃ : Type}
     have h := semify_bind C₁ C₂ S
     aesop
 
+------------------------------------------------
+-------- Transformers Instantiations -----------
+------------------------------------------------
+
+#check StateT
+
+instance : HHL Set where
+  elemType := Id
+  relWith C p p' := p' ∈ C p
+  bind_rel := by
+    aesop
+
+instance (σ : Type) (m : Type → Type) [Monad m] [HHL m] : HHL (StateT σ m) where
+  elemType α := elemType m (α × σ)
+  --elemType α := elemType m α × σ
+  relWith {α β : Type} (C : α → StateT σ m β)
+    (p : elemType m (α × σ)) (p' : elemType m (β × σ)) :=
+    relWith (fun v ↦ C v.1 v.2) p p'
+  bind_rel := by
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    rename_i x0 HHL_M x2 HHL_m
+    apply HHL_m.bind_rel (fun v₁ ↦ C₁ v₁.1 v₁.2) (fun v₂ ↦ C₂ v₂.1 v₂.2) p₀ p₂
+
+-- Correct StateT σ Set instance
+
+variable (σ : Type)
+-- #check (HHL.relWith (M := StateT σ Set))
+#synth HHL (StateT σ Set)
+
+lemma test_stateT_set1 (σ α : Type _) :
+  elemType (StateT σ Set) α = (α × σ) := by
+  rfl
+
+lemma test_stateT_set2 {σ α : Type}
+  (C : α → StateT σ Set α) (p p' : elemType (StateT σ Set) α)
+  : relWith C p p' ↔ p' ∈ C p.1 p.2 := by
+  rfl
+
+-- variable (σ : Type)
+-- #check (HHL.relWith (M := StateT σ Set))
+-- #synth HHL (StateT σ Set)
+
+/-
+def optionify {α β : Type} {m : Type → Type} [Monad m]
+  (f : α → m (Option β)) : α → m β :=
+  fun a => do
+    match (← f a) with
+    | some b => pure b
+    | none   => fail
+-/
+
+def optionify {α β : Type} {m : Type → Type} [Monad m]
+  (f : α → m (Option β)) : Option α → m (Option β)
+  | some a => f a
+  | none   => pure none
+
+instance (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL (OptionT m) where
+  elemType α := elemType m (Option α)
+  relWith {α β : Type}
+    (f : α → m (Option β))
+    (p : elemType m (Option α)) (p' : elemType m (Option β))
+    := relWith (optionify f) p p'
+  bind_rel := by
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    rename_i Monad_M HHL_M Monad_m HHL_m Lawful_m
+    have h := HHL_m.bind_rel (optionify C₁) (optionify C₂) p₀ p₂
+
+    have heq : (fun v₁ ↦ optionify C₁ v₁ >>= optionify C₂)
+      = (optionify fun v₁ ↦ @bind (OptionT m) OptionT.instMonad.toBind α₁ α₂ (C₁ v₁) C₂)
+    := by
+      apply funext
+      simp [optionify, Bind.bind, OptionT.bind]
+      intro p0
+      cases p0
+      {
+        simp
+        simp [optionify]
+      }
+      {
+        rename_i v0
+        rw [Bind.bind]
+        simp
+        rw [OptionT.mk]
+        have heq : (optionify C₂) = (fun v ↦ match v with | some a => C₂ a | none => pure none)
+        := by
+          apply funext
+          intro p
+          simp [optionify]
+        aesop
+      }
+    aesop
+
 instance : HHL Id where
   elemType := Id
   relWith f p p' := p' = f p
   bind_rel := by
     aesop
+
+
+-- Correct HHL Option instance
+
+-- #check (HHL.relWith (M := StateT σ Set))
+-- set_option diagnostics true
+#synth HHL (OptionT Id)
+
+lemma test_HHL_Option1 (α : Type _) :
+  elemType (OptionT Id) α = Option α := by
+  rfl
+
+lemma test_HHL_Option2 {α : Type}
+  (C : α → (OptionT Id) α) (p p' : elemType (OptionT Id) α)
+  : relWith C p p' ↔ (match p with
+    | some v => p' = C v
+    | none => p' = none
+  )
+  := by
+    simp [HHL.relWith, optionify, pure]
+    aesop
+
+
+
+
+
+
+
+instance : HHL Option where
+  elemType α := Option α
+  relWith f p p' :=
+    match p with
+    | none => p' = none
+    | some v => p' = some (f v)
+  bind_rel := by
+    simp [Bind.bind, Option.bind]
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    cases p₀
+    · simp
+    simp
+    cases p₂
+    {
+      simp
+      intro x h1 h2
+      cases x
+      · simp at h1
+      simp at h2
+    }
+    {
+      simp
+      rename_i v0 v2
+      apply Iff.intro
+      {
+        intro h
+        simp at h
+        cases hC₁ : C₁ v0 <;> simp [hC₁] at h
+        rename_i v1
+        apply Exists.intro (some v1)
+        aesop
+      }
+      {
+        intro h
+        simp at h
+        rcases h with ⟨p1, hrel1, hrel2⟩
+        cases hp1 : p1 <;> simp [hp1] at hrel1 hrel2
+        rename_i v1
+        aesop
+      }
+    }
+
+------------------------------------------------
+------------- Instantiations -------------------
+------------------------------------------------
+
+
 
 instance (σ : Type) : HHL (StateM σ) where
   elemType α := α × σ
@@ -90,13 +275,6 @@ def Set.bind {α β : Type} : Set α → (α → Set β) → Set β
 instance : Monad Set where
   pure := Set.pure
   bind := Set.bind
-
-instance : HHL Set where
-  elemType := Id
-  relWith C p p' := p' ∈ C p
-  bind_rel := by
-    aesop
-
 instance (σ : Type) : HHL (StateT σ Set) where
   elemType α := α × σ
   relWith C p p' := p' ∈ C p.1 p.2
@@ -111,9 +289,39 @@ instance : HHL Option where
     | some v => p' = some (f v)
   bind_rel := by
     simp [Bind.bind, Option.bind]
-    sorry
-
-
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    cases p₀
+    · simp
+    simp
+    cases p₂
+    {
+      simp
+      intro x h1 h2
+      cases x
+      · simp at h1
+      simp at h2
+    }
+    {
+      simp
+      rename_i v0 v2
+      apply Iff.intro
+      {
+        intro h
+        simp at h
+        cases hC₁ : C₁ v0 <;> simp [hC₁] at h
+        rename_i v1
+        apply Exists.intro (some v1)
+        aesop
+      }
+      {
+        intro h
+        simp at h
+        rcases h with ⟨p1, hrel1, hrel2⟩
+        cases hp1 : p1 <;> simp [hp1] at hrel1 hrel2
+        rename_i v1
+        aesop
+      }
+    }
 
 
 end HHL
