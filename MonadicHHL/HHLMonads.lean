@@ -26,7 +26,8 @@ instance : LawfulMonad Set where
     by
       intro α ma
       simp [Pure.pure, Bind.bind, Set.pure, Set.bind]
-      sorry
+      simp [Functor.map, Set.image]
+      aesop
   bind_assoc :=
     by
       intro α β γ f g ma
@@ -48,6 +49,12 @@ def optionify {α β : Type} {m : Type → Type} [Monad m]
   (f : α → m (Option β)) : Option α → m (Option β)
   | some a => f a
   | none   => pure none
+
+def exceptify {ε α β : Type} {m : Type → Type} [Monad m]
+  (f : α → m (Except ε β)) : Except ε α → m (Except ε β)
+  | Except.ok a => f a
+  | Except.error e => pure (Except.error e)
+
 
 --------------------------------
 -------- HHL typeclass ---------
@@ -88,6 +95,71 @@ lemma semify_bind {α₁ α₂ α₃ : Type}
   have h := bind_rel C₁ C₂
   aesop
 
+lemma semify_if_sync {α β : Type _}
+  (C1 C2 : α → M β) (b : Bool)
+  (S : Set (elemType M α)) :
+  (b → semify (fun v ↦ if b then C1 v else C2 v) S = semify C1 S)
+  ∧
+  (¬b → semify (fun v ↦ if b then C1 v else C2 v) S = semify C2 S)
+ := by
+  simp [semify]
+  aesop
+
+/-
+lemma relWith_equiv {α β : Type _}
+  {C1 C2 : α → M β}
+  (h : ∀ v, C1 v = C2 v)
+  (p : elemType M α) (p' : elemType M β) :
+  HHL.relWith C1 p p' ↔ HHL.relWith C2 p p'
+  := by
+
+    simp [HHL.relWith]
+
+    intro p'
+    simp [semify]
+    apply Iff.intro
+    {
+      intro h1
+      rcases h1 with ⟨p, hpS, hpRel⟩
+      apply Exists.intro p
+
+      aesop
+    }
+    {
+      intro h1
+      rcases h1 with ⟨p, hpS, hpRel⟩
+      have heq : C2 p = C1 p := by rw [←h p]
+      rw [heq] at hpRel
+      aesop
+    }
+-/
+
+
+/-
+lemma rel_with_if_specialized {α : Type}
+  (C1 C2 : Bool → M α)
+  (p : elemType M Bool)
+  (p' : elemType M α)
+  :
+relWith (fun b ↦ if b = true then C1 b else C2 b) p p'
+↔ (relWith C1 p p' ∨ relWith C2 p p')
+:=
+sorry
+
+
+
+lemma semify_if {α : Type}
+  (C1 : Bool → M α) (C2 : Bool → M α) (S : Set (elemType M Bool)) :
+  semify (fun b ↦ if b then C1 b else C2 b) S = semify C1 S ∪ semify C2 S
+ := by
+  simp [semify]
+  apply Set.ext
+  intro p'
+  simp
+  have h := rel_with_if_specialized C1 C2
+  aesop
+-/
+
 def hyperassertion (α : Type) : Type :=
   Set (elemType M α) → Prop
 
@@ -112,6 +184,15 @@ lemma WP_bind {α₁ α₂ α₃ : Type}
     apply prove_prop_by_eq
     have h := semify_bind C₁ C₂ S
     aesop
+
+lemma WP_if_sync {α β : Type _}
+  (C1 C2 : α → M β) (b : Bool) :
+  WP (fun v ↦ if b then C1 v else C2 v) =
+    if b then WP C1 else WP C2
+ := by
+  have h := semify_if_sync C1 C2 b
+  aesop
+
 
 ------------------------------------------------
 ---------------- Base Monads -------------------
@@ -221,6 +302,74 @@ lemma test_HHL_Option2 {α : Type}
     simp [HHL.relWith, optionify, pure]
     aesop
 
+/-
+lemma rel_with_if_specialized_to_option {α β : Type}
+  {C1 C2 : α → OptionT Id β}
+  {p : elemType (OptionT Id) α}
+  {p' : elemType (OptionT Id) β}
+  {b : α → Bool}
+  :
+relWith (fun v ↦ if b v then C1 v else C2 v) p p'
+↔ (relWith C1 p p' ∨ relWith C2 p p')
+:= by
+  simp [HHL.relWith, optionify, pure]
+  cases p
+  · simp
+  simp
+  rename_i v
+
+
+  cases v
+  {
+    simp
+
+  }
+  -/
+
+
+------------ ExceptT ---------------
+
+instance (ε : Type) (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL (ExceptT ε m) where
+  elemType α := elemType m (Except ε α)
+  relWith {α β : Type}
+    (f : α → m (Except ε β))
+    (p : elemType m (Except ε α)) (p' : elemType m (Except ε β))
+    := relWith (exceptify f) p p'
+  bind_rel := by
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    rename_i Monad_M HHL_M Monad_m HHL_m Lawful_m
+    have h := HHL_m.bind_rel (exceptify C₁) (exceptify C₂) p₀ p₂
+
+    have heq : (fun v₁ ↦ exceptify C₁ v₁ >>= exceptify C₂)
+      = (exceptify fun v₁ ↦ @bind (ExceptT ε m) ExceptT.instMonad.toBind α₁ α₂ (C₁ v₁) C₂)
+    := by
+      apply funext
+      intro p0
+      simp [exceptify, Bind.bind, ExceptT.bind]
+      cases p0
+      {
+        simp
+        simp [exceptify]
+      }
+      {
+        rename_i v0
+        rw [Bind.bind]
+        simp
+        rw [ExceptT.mk]
+        have heq : (exceptify C₂) =
+        (fun v ↦ match v with | Except.ok a => C₂ a | Except.error e => pure (Except.error e))
+        := by
+          apply funext
+          intro p
+          simp [exceptify]
+        aesop
+      }
+    aesop
+
+
+
+
+
 ------------ Logical Variables ---------------
 
 --- The unused type parameter is the logical part of the state
@@ -259,41 +408,53 @@ instance {m : Type _ → Type _} (L : Type) [Monad m] [HHL m] : HHL (LogicT L m)
 abbrev LHHL_Monad (L σ α : Type) : Type :=
   LogicT L (StateT σ Set) α
 
-lemma rel_with_LHHL_Monad (L σ α : Type)
-  (C : α → LHHL_Monad L σ α)
-  (p : (α × σ) × L) (p' : (α × σ) × L) :
+lemma rel_with_LHHL_Monad (L σ α β : Type)
+  (C : α → LHHL_Monad L σ β)
+  (p : (α × σ) × L) (p' : (β × σ) × L) :
   HHL.relWith C p p' ↔ (p.2 = p'.2 ∧ p'.1 ∈ C p.1.1 p.1.2)
   := by
   simp [HHL.relWith]
   aesop
 
+lemma semify_HHL (L σ α₁ α₂ : Type)
+  (C : α₁ → LHHL_Monad L σ α₂)
+  (S : Set ((α₁ × σ) × L)) :
+  HHL.semify C S = { p' | ∃ p ∈ S, p.2 = p'.2 ∧ p'.1 ∈ C p.1.1 p.1.2 }
+  := by
+  simp [HHL.semify]
+  --have h := rel_with_LHHL_Monad L σ α₁ α₂ C
+  apply Set.ext
+  intro p2
+  simp [HHL.relWith]
+  apply Iff.intro
+  {
+    intro h
+    rcases h with ⟨p, hpS, hpRel⟩
+    apply Exists.intro p.1.1
+    apply Exists.intro p.1.2
+    have heq : ((p.1.1, p.1.2), p2.2) = p := by aesop
+    aesop
+  }
+  {
+    intro h
+    aesop
+  }
+
+
 abbrev weird_monad (L σ α : Type) : Type :=
   StateT σ (LogicT L Set) α
 
-lemma both_commute_ (L σ α : Type) :
-  (HHL.elemType (weird_monad L σ) α) = (HHL.elemType (LHHL_Monad L σ) α) :=
+lemma same_monads :
+  weird_monad = LHHL_Monad :=
   rfl
 
-lemma both_commute_rel_with (L σ α : Type) :
-  (HHL.elemType (weird_monad L σ) α) = (HHL.elemType (LHHL_Monad L σ) α) :=
+lemma same_elemType (L σ : Type) :
+  HHL.elemType (weird_monad L σ) = HHL.elemType (LHHL_Monad L σ) :=
   rfl
 
-
-
--- The two monad transformers commute???
-
-
-
-lemma rel_with_weird (L σ α : Type)
-  (C : α → weird_monad L σ α)
-  (p : (α × σ) × L) (p' : (α × σ) × L) :
-  HHL.relWith C p p' ↔ (p.2 = p'.2) -- ∧ p'.1 ∈ C p.1.1 p.1.2)
-  := by
-  simp [HHL.relWith]
-  sorry
-  --aesop
-
-
+lemma same_rel_with (L σ : Type) :
+  @HHL.relWith (weird_monad L σ) = @HHL.relWith (LHHL_Monad L σ) :=
+  rfl
 
 
 end HHL
@@ -341,8 +502,16 @@ lemma semify_for_Hypra {σ α₁ α₂ : Type}
   have h := relWith_Hypra C
   apply Set.ext
   intro x
-  simp
-  sorry
+  simp [HHL.relWith, optionify, pure]
+  apply Iff.intro
+  {
+    intro h
+    rcases h with ⟨p, hpS, hpRel⟩
+    sorry
+  }
+  {
+    sorry
+  }
 
 
 syntax (name := checkUnfolding) "#check " term " unfolding " ident* : command
