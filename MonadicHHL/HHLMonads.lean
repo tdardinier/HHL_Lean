@@ -3,6 +3,9 @@ import Mathlib.Order.CompleteBooleanAlgebra
 import Mathlib.Order.Lattice
 import Mathlib.Order.Basic
 
+register_simp_attr charact_simps
+register_simp_attr wp_simps
+
 -------------------------------
 ------- Preliminaries ---------
 -------------------------------
