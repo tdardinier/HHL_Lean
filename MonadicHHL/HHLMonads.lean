@@ -176,7 +176,7 @@ def WP {α₁ α₂ : Type}
 lemma WP_bind {α₁ α₂ α₃ : Type}
   (C₁ : α₁ → M α₂)
   (C₂ : α₂ → M α₃) :
-  WP (fun v₁ => C₁ v₁ >>= C₂) = (WP C₁) ∘ (WP C₂)
+  WP (C₁ >=> C₂) = (WP C₁) ∘ (WP C₂)
   := by
     apply funext
     intro Q
@@ -195,6 +195,34 @@ lemma WP_if_sync {α β : Type _}
  := by
   have h := semify_if_sync C1 C2 b
   aesop
+
+def triple {α₁ α₂ : Type}
+  (P : @hyperassertion M _ _ α₁)
+  (C : α₁ → M α₂)
+  (Q : @hyperassertion M _ _ α₂) : Prop :=
+  ∀ S, P S → Q (semify C S)
+
+lemma triple_equiv {α β : Type}
+  (P : @hyperassertion M _ _ α)
+  (C : α → M β)
+  (Q : @hyperassertion M _ _ β) :
+  triple P C Q ↔ (∀ S, P S → WP C Q S) :=
+  by
+    simp [triple, WP]
+
+lemma rule_seq {α₁ α₂ α₃ : Type}
+  {C1 : α₁ → M α₂}
+  {C2 : α₂ → M α₃}
+  {P : @hyperassertion M _ _ α₁}
+  {R : @hyperassertion M _ _ α₂}
+  {Q : @hyperassertion M _ _ α₃}
+  (h1 : triple P C1 R)
+  (h2 : triple R C2 Q) :
+  triple P (C1 >=> C2) Q
+  := by
+    simp [triple_equiv] at *
+    have h := WP_bind C1 C2
+    aesop
 
 
 ------------------------------------------------
@@ -370,7 +398,41 @@ instance (ε : Type) (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL
     aesop
 
 
+------------ ReaderT ---------------
 
+instance (σ : Type) (m : Type → Type) [Monad m] [HHL m] : HHL (ReaderT σ m) where
+  -- elemType α := elemType m (α × σ)
+  elemType α := elemType m α × σ
+  relWith {α β : Type} (C : α → ReaderT σ m β)
+    (p : elemType m α × σ) (p' : elemType m β × σ) :=
+    relWith (fun v => C v p.2) p.1 p'.1 ∧ p.2 = p'.2
+  bind_rel := by
+    intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
+    rename_i x0 HHL_M x2 HHL_m
+    have h := HHL_m.bind_rel (fun v₁ ↦ C₁ v₁ p₀.2) (fun v₂ ↦ C₂ v₂ p₂.2) p₀.1 p₂.1
+    apply Iff.intro
+    {
+      intro h1
+      have h := h.mp (by
+        rw [HHL.relWith]
+        aesop
+      )
+      rcases h with ⟨s1, hp1_rel, hp2_rel⟩
+      apply Exists.intro (s1, p₀.2)
+      aesop
+    }
+    {
+      intro h1
+      rcases h1 with ⟨p1, hp1_rel, hp2_rel⟩
+      have h := h.mpr (by
+        rw [HHL.relWith]
+        aesop
+      )
+      have heq : (fun v₁ ↦ do let v₂ ← C₁ v₁ p₀.2; C₂ v₂ p₂.2)
+        = (fun v ↦ (fun v₁ ↦ C₁ v₁ >>= C₂) v p₀.2) := by
+        aesop
+      aesop
+    }
 
 
 ------------ Logical Variables ---------------
@@ -538,5 +600,44 @@ def elacCheckUnfolding : CommandElab
 
 
 abbrev MonadT : Type _ := (Type _ → Type _) → Type _ → Type _
+
+
+def asym_triple {α : Type}
+  (P : Set α → Prop) (C : α → Option α) (Q : Set (Option α) → Prop) : Prop
+  :=
+  (∀ S, P S → Q (C '' S))
+
+def the {α : Type} [Inhabited α] (x : Option α) : α :=
+  Option.getD x (Inhabited.default)
+
+/-
+lemma hyperassertion_option {α : Type} :
+  @HHL.elemType (OptionT Id) _ _ α = Option α := b
+  rfl
+
+  Maybe nice syntactic rule?
+-/
+lemma asym_triple_equiv {α : Type} [Inhabited α]
+  (P : Set α → Prop) (C : α → OptionT Id α) (Q : Set (OptionT Id α) → Prop) :
+  asym_triple P C Q
+  ↔ @HHL.triple (OptionT Id) _ _ _ _ (fun S => P (the '' S) ∧ (∀ σ ∈ S, σ ≠ none)) C Q :=
+  by
+    simp [asym_triple, HHL.triple, HHL.elemType]
+    simp [HHL.semify]
+    apply Iff.intro
+    {
+      intro h
+      intro S
+      intro hP
+      have hQ := h (the '' S)
+      sorry
+    }
+    {
+      intro h
+      intro S
+      intro hP
+      sorry
+    }
+
 
 end
