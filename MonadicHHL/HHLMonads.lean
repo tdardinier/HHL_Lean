@@ -42,6 +42,17 @@ instance : LawfulMonad Set where
   pure_seq := sorry
   bind_map := sorry
 
+def nonterminating : Set Int := do
+  while true do
+    return 1
+  return 0
+
+/-
+lemma empty_set : nonterminating = {} := by
+  unfold nonterminating forIn
+-/
+
+
 lemma prove_prop_by_eq {α : Type} {x y : α}
   (P : α → Prop)
   (h : x = y) :
@@ -196,6 +207,16 @@ lemma WP_if_sync {α β : Type _}
   have h := semify_if_sync C1 C2 b
   aesop
 
+lemma WP_cons {α β : Type _}
+  (C : α → M β)
+  (Q₁ Q₂ : @hyperassertion M _ _ β) :
+  (∀ S, Q₁ S → Q₂ S) →
+  (∀ S, WP C Q₁ S → WP C Q₂ S) := by
+    intros h
+    simp [WP, semify]
+    aesop
+
+
 def triple {α₁ α₂ : Type}
   (P : @hyperassertion M _ _ α₁)
   (C : α₁ → M α₂)
@@ -223,6 +244,19 @@ lemma rule_seq {α₁ α₂ α₃ : Type}
     simp [triple_equiv] at *
     have h := WP_bind C1 C2
     aesop
+
+lemma rule_cons {α β : Type}
+  {C : α → M β}
+  {P₁ P₂ : @hyperassertion M _ _ α}
+  {Q : @hyperassertion M _ _ β}
+  (h1 : triple P₂ C Q)
+  (h2 : ∀ S, P₁ S → P₂ S) :
+  triple P₁ C Q
+  := by
+    simp [triple_equiv] at *
+    have h := WP_cons C Q
+    aesop
+
 
 
 ------------------------------------------------
@@ -278,7 +312,7 @@ lemma test_stateT_set2 {σ α : Type}
 
 ------------ OptionT ---------------
 
-instance (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL (OptionT m) where
+instance (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m] : HHL (OptionT m) where
   elemType α := elemType m (Option α)
   relWith {α β : Type}
     (f : α → m (Option β))
@@ -313,6 +347,52 @@ instance (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL (OptionT m)
         aesop
       }
     aesop
+
+-- m : option unit?
+def assertT (m : Type → Type) [Monad m] : Bool → OptionT m Unit
+  | true  => @pure m _ _ (Option.some ())
+  | false => @pure m _ _ (Option.none)
+
+def liftToOptionT {m : Type → Type} [Monad m] {α β : Type}
+  (C : α → m β) : α → OptionT m β := fun x =>
+    let y : m β := C x
+    OptionT.lift y
+
+#check OptionT.lift
+
+def liftHyperassertionToOptionT_aux {m : Type → Type} [Monad m] [HHL m] [LawfulMonad m]
+  {α : Type} (P : Set (elemType m α) → Prop) (S : Set (elemType m (Option α))) : Prop :=
+  sorry
+  -- Annoying part: Should I specify that P has no error state at the start?
+  -- Or the property about error states is preserved?
+
+
+def liftHyperassertionToOptionT {m : Type → Type} [Monad m] [HHL m] [LawfulMonad m]
+  {α : Type} (P : @HHL.hyperassertion m _ _ α) : @HHL.hyperassertion (OptionT m) _ _ α :=
+  --fun (S : Set (Option α)) => P (Option.some '' S)
+  -- fun (S : Set (Option α)) => P (semify (fun a => OptionT.lift (Pure.pure a)) S)
+  liftHyperassertionToOptionT_aux P
+
+/-
+lemma lift_triple_OptionT {m : Type → Type} [Monad m] [HHL m]
+  {α β : Type}
+  {P : @HHL.hyperassertion m _ _ α}
+  {C : α → m β}
+  {Q : @HHL.hyperassertion m _ _ β}
+  (h : HHL.triple P C Q) :
+  HHL.triple P (liftToOptionT C) Q :=
+  by
+    simp [HHL.triple, HHL.semify, liftToOptionT, OptionT.lift, optionify]
+    aesop
+    -/
+
+
+/-
+@[always_inline, inline] protected def lift (x : m α) : OptionT m α := OptionT.mk do
+  return some (← x)
+-/
+
+
 
 
 -- #check (HHL.relWith (M := StateT σ Set))
