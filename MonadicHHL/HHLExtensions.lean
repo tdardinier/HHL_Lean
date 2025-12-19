@@ -41,8 +41,8 @@ abbrev isDead {α : Type _} (σ : HHL.elemType M α) : Prop :=
     (getVal σ).isNone
 
 
-lemma inactive_congr {α β : Type _} {σ : HHL.elemType M α}
-      (h : isDead σ) (C D : α → M β) (σ' : HHL.elemType M β) :
+lemma inactive_congr {α β : Type _} (σ : HHL.elemType M α)
+      (C D : α → M β) (σ' : HHL.elemType M β) (h : isDead σ) :
     (HHL.relWith C σ σ' ↔ HHL.relWith D σ σ') := by
     have h1 := inactive C σ σ' h
     have h2 := inactive D σ σ' h
@@ -104,22 +104,48 @@ lemma low_semify_if {α : Type _}
     intro p'
     simp
     have h := simplify_if_ok_relWith b C₁ C₂
-    have hh : ∀ p p', p ∈ S → HHL.relWith (fun x ↦ if b x then C₁ x else C₂ x) p p'
-            ↔ HHL.relWith C₁ p p' := by
-      intro p p'
-      sorry
-      -- case distinction on getVal σ
-      --specialize h p p'
+    have hh : ∀ p p', p ∈ S → (HHL.relWith (fun x ↦ if b x then C₁ x else C₂ x) p p'
+            ↔ HHL.relWith C₁ p p') := by
+      intro p p' hpS
+      cases hp : getVal p
+      {
+        have h1 := inactive_congr p C₁ (fun x ↦ if b x = true then C₁ x else C₂ x) p'
+        aesop
+      }
+      {
+        rename_i pp v
+        specialize h p p' (by aesop)
+        simp [H.forallOk, H.pure] at h_true
+        specialize h_true p hpS v hp
+        simp [h_true] at h
+        exact h
+      }
     grind
   }
   {
     rename_i h_false
     apply Or.inr
     apply Set.ext
-    intro x
+    intro p'
     simp
-    -- Same proof here
-    sorry
+    have h := simplify_if_ok_relWith b C₁ C₂
+    have hh : ∀ p p', p ∈ S → (HHL.relWith (fun x ↦ if b x then C₁ x else C₂ x) p p'
+            ↔ HHL.relWith C₂ p p') := by
+      intro p p' hpS
+      cases hp : getVal p
+      {
+        have h1 := inactive_congr p C₂ (fun x ↦ if b x = true then C₁ x else C₂ x) p'
+        aesop
+      }
+      {
+        rename_i pp v
+        specialize h p p' (by aesop)
+        simp [H.forallOk, H.pure] at h_false
+        specialize h_false p hpS v hp
+        simp [h_false] at h
+        exact h
+      }
+    grind
   }
 
 lemma if_sync {M : Type _ → Type _} [Monad M] [HHLWithValLawful M]
@@ -262,3 +288,5 @@ Props that:
 - Can quantify over those
 - Hopefully, we can even connect the NonTerm type to loop divergence generically
 -/
+
+end
