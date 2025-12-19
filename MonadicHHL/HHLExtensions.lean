@@ -218,6 +218,25 @@ instance {σ : Type _} (M : Type _ → Type _) [Monad M] [HHLWithVal M]
   coerce {α β : Type _} (σ : HHL.elemType (M := M) (α × σ)) h :=
     coerce (M := M) σ (by aesop)
 
+instance {σ : Type _} (M : Type _ → Type _) [Monad M] [HHLWithValLawful M]
+  : HHLWithValLawful (StateT σ M) where
+  inactive {α β : Type _}
+    (C : α → StateT σ M β) (p : HHL.elemType (M := M) (α × σ)) (p' : HHL.elemType (M := M) (β × σ))
+    (h : (getVal (M :=  StateT σ M) p).isNone) := by
+    have hh := inactive (M := M) (fun p => C p.1 p.2) p p' (by
+      simp [getVal] at h
+      aesop)
+    aesop
+  active_congr {α β : Type _}
+    (p : HHL.elemType (M := M) (α × σ)) (v : α)
+    (h : getVal (M := StateT σ M) p = some v)
+    (C D : α → StateT σ M β) (p' : HHL.elemType (M := M) (β × σ)) := by
+    simp [getVal] at h
+    rcases h with ⟨s, hv⟩
+    simp [HHL.relWith]
+    have hh := active_congr (M := M) p (v, s) (by aesop) (fun v ↦ C v.1 v.2) (fun v ↦ D v.1 v.2) p'
+    aesop
+
 -- Other classes
 
 class HHLPrecise (M : Type _ → Type _) [Monad M] extends HHLWithVal M where
