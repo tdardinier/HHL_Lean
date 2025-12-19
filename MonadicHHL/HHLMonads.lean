@@ -53,18 +53,18 @@ lemma empty_set : nonterminating = {} := by
 -/
 
 
-lemma prove_prop_by_eq {α : Type} {x y : α}
+lemma prove_prop_by_eq {α : Type _} {x y : α}
   (P : α → Prop)
   (h : x = y) :
   P x ↔ P y := by
     rw [h]
 
-def optionify {α β : Type} {m : Type → Type} [Monad m]
+def optionify {α β : Type _} {m : Type _ → Type _} [Monad m]
   (f : α → m (Option β)) : Option α → m (Option β)
   | some a => f a
   | none   => pure none
 
-def exceptify {ε α β : Type} {m : Type → Type} [Monad m]
+def exceptify {ε α β : Type _} {m : Type _ → Type _} [Monad m]
   (f : α → m (Except ε β)) : Except ε α → m (Except ε β)
   | Except.ok a => f a
   | Except.error e => pure (Except.error e)
@@ -174,10 +174,10 @@ lemma semify_if {α : Type}
   aesop
 -/
 
-def hyperassertion (α : Type) : Type :=
+def hyperassertion (α : Type _) : Type _ :=
   Set (elemType M α) → Prop
 
-def W (α₁ α₂ : Type) : Type :=
+def W (α₁ α₂ : Type _) : Type _ :=
   @hyperassertion M _ _ α₂ → @hyperassertion M _ _ α₁
 
 def WP {α₁ α₂ : Type}
@@ -217,21 +217,21 @@ lemma WP_cons {α β : Type _}
     aesop
 
 
-def triple {α₁ α₂ : Type}
+def triple {α₁ α₂ : Type _}
   (P : @hyperassertion M _ _ α₁)
   (C : α₁ → M α₂)
   (Q : @hyperassertion M _ _ α₂) : Prop :=
   ∀ S, P S → Q (semify C S)
 
-lemma triple_equiv {α β : Type}
-  (P : @hyperassertion M _ _ α)
+lemma triple_equiv {α β : Type _}
+  (P : hyperassertion α)
   (C : α → M β)
-  (Q : @hyperassertion M _ _ β) :
+  (Q : hyperassertion β) :
   triple P C Q ↔ (∀ S, P S → WP C Q S) :=
   by
     simp [triple, WP]
 
-lemma rule_seq {α₁ α₂ α₃ : Type}
+lemma rule_seq {α₁ α₂ α₃ : Type _}
   {C1 : α₁ → M α₂}
   {C2 : α₂ → M α₃}
   {P : @hyperassertion M _ _ α₁}
@@ -344,6 +344,7 @@ instance (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m] : HHL (Option
           apply funext
           intro p
           simp [optionify]
+          aesop
         aesop
       }
     aesop
@@ -440,9 +441,9 @@ relWith (fun v ↦ if b v then C1 v else C2 v) p p'
 
 ------------ ExceptT ---------------
 
-instance (ε : Type) (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL (ExceptT ε m) where
+instance (ε : Type _) (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m] : HHL (ExceptT ε m) where
   elemType α := elemType m (Except ε α)
-  relWith {α β : Type}
+  relWith {α β : Type _}
     (f : α → m (Except ε β))
     (p : elemType m (Except ε α)) (p' : elemType m (Except ε β))
     := relWith (exceptify f) p p'
@@ -473,6 +474,7 @@ instance (ε : Type) (m : Type → Type) [Monad m] [HHL m] [LawfulMonad m] : HHL
           apply funext
           intro p
           simp [exceptify]
+          aesop
         aesop
       }
     aesop
