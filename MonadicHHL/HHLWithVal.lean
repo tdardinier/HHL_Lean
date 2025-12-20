@@ -48,6 +48,22 @@ lemma inactive_congr {α β : Type _} (σ : HHL.elemType M α)
     have h2 := inactive D σ σ' h
     aesop
 
+lemma relWith_congr {α β : Type _}
+  {C1 C2 : α → M β}
+  (h : ∀ v, C1 v = C2 v)
+  (p : HHL.elemType M α) (p' : HHL.elemType M β) :
+  HHL.relWith C1 p p' ↔ HHL.relWith C2 p p'
+  := by
+    cases hv : getVal p
+    {
+      have h := inactive_congr p C1 C2 p'
+      aesop
+    }
+    {
+      have h := active_congr _ _ hv C1 C2
+      aesop
+    }
+
 lemma simplify_if_ok_relWith {α β : Type _}
   (b : α → Bool) (C₁ C₂ : α → M β)
   (σ : HHL.elemType M α) (σ' : HHL.elemType M β)

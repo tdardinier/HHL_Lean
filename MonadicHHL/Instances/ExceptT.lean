@@ -1,7 +1,15 @@
 import MonadicHHL.HHLMonads
 import MonadicHHL.HHLWithVal
 
-instance (ε : Type _) (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m] : HHL (ExceptT ε m) where
+def exceptify {ε α β : Type _} {m : Type _ → Type _} [Monad m]
+  (f : α → m (Except ε β)) : Except ε α → m (Except ε β)
+  | Except.ok a => f a
+  | Except.error e => pure (Except.error e)
+
+open HHL
+
+instance (ε : Type _) (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m]
+  : HHL (ExceptT ε m) where
   elemType α := elemType m (Except ε α)
   relWith {α β : Type _}
     (f : α → m (Except ε β))
@@ -9,8 +17,8 @@ instance (ε : Type _) (m : Type _ → Type _) [Monad m] [HHL m] [LawfulMonad m]
     := relWith (exceptify f) p p'
   bind_rel := by
     intro α₀ α₁ α₂ C₁ C₂ p₀ p₂
-    rename_i Monad_M HHL_M Monad_m HHL_m Lawful_m
-    have h := HHL_m.bind_rel (exceptify C₁) (exceptify C₂) p₀ p₂
+    rename_i Monad_M Monad_m Lawful_m
+    have h := bind_rel (exceptify C₁) (exceptify C₂) p₀ p₂
 
     have heq : (fun v₁ ↦ exceptify C₁ v₁ >>= exceptify C₂)
       = (exceptify fun v₁ ↦ @bind (ExceptT ε m) ExceptT.instMonad.toBind α₁ α₂ (C₁ v₁) C₂)

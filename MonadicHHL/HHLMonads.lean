@@ -9,16 +9,6 @@ lemma prove_prop_by_eq {α : Type _} {x y : α}
   P x ↔ P y := by
     rw [h]
 
-def optionify {α β : Type _} {m : Type _ → Type _} [Monad m]
-  (f : α → m (Option β)) : Option α → m (Option β)
-  | some a => f a
-  | none   => pure none
-
-def exceptify {ε α β : Type _} {m : Type _ → Type _} [Monad m]
-  (f : α → m (Except ε β)) : Except ε α → m (Except ε β)
-  | Except.ok a => f a
-  | Except.error e => pure (Except.error e)
-
 
 --------------------------------
 -------- HHL typeclass ---------
@@ -59,6 +49,7 @@ lemma semify_bind {α₁ α₂ α₃ : Type}
   have h := bind_rel C₁ C₂
   aesop
 
+/-
 lemma semify_if_sync {α β : Type _}
   (C1 C2 : α → M β) (b : Bool)
   (S : Set (elemType M α)) :
@@ -68,35 +59,9 @@ lemma semify_if_sync {α β : Type _}
  := by
   simp [semify]
   aesop
-
-/-
-lemma relWith_equiv {α β : Type _}
-  {C1 C2 : α → M β}
-  (h : ∀ v, C1 v = C2 v)
-  (p : elemType M α) (p' : elemType M β) :
-  HHL.relWith C1 p p' ↔ HHL.relWith C2 p p'
-  := by
-
-    simp [HHL.relWith]
-
-    intro p'
-    simp [semify]
-    apply Iff.intro
-    {
-      intro h1
-      rcases h1 with ⟨p, hpS, hpRel⟩
-      apply Exists.intro p
-
-      aesop
-    }
-    {
-      intro h1
-      rcases h1 with ⟨p, hpS, hpRel⟩
-      have heq : C2 p = C1 p := by rw [←h p]
-      rw [heq] at hpRel
-      aesop
-    }
 -/
+
+
 
 
 /-
@@ -149,6 +114,7 @@ lemma WP_bind {α₁ α₂ α₃ : Type}
     have h := semify_bind C₁ C₂ S
     aesop
 
+/-
 lemma WP_if_sync {α β : Type _}
   (C1 C2 : α → M β) (b : Bool) :
   WP (fun v ↦ if b then C1 v else C2 v) =
@@ -156,6 +122,7 @@ lemma WP_if_sync {α β : Type _}
  := by
   have h := semify_if_sync C1 C2 b
   aesop
+-/
 
 lemma WP_cons {α β : Type _}
   (C : α → M β)
@@ -165,6 +132,68 @@ lemma WP_cons {α β : Type _}
     intros h
     simp [WP, semify]
     aesop
+
+abbrev H.and {α : Type _} (P Q : hyperassertion (M := M) α) : hyperassertion (M := M) α
+:= fun S => P S ∧ Q S
+
+abbrev H.or {α : Type _} (P Q : hyperassertion (M := M) α) : hyperassertion (M := M) α
+:= fun S => P S ∨ Q S
+
+abbrev H.forall {α β : Type _} (P : α → hyperassertion (M := M) β) : hyperassertion (M := M) β
+:= fun S => ∀ x, P x S
+
+abbrev H.exists {α β : Type _} (P : α → hyperassertion (M := M) β) : hyperassertion (M := M) β
+:= fun S => ∃ x, P x S
+
+abbrev H.true {α : Type _} : hyperassertion (M := M) α
+:= fun _ => True
+
+abbrev H.false {α : Type _} : hyperassertion (M := M) α
+:= fun _ => False
+
+abbrev H.join {α : Type _} (P Q : hyperassertion (M := M) α) : hyperassertion (M := M) α
+:= fun S => ∃ S1 S2, S = S1 ∪ S2 ∧ P S1 ∧ Q S2
+
+
+lemma WP_and {α β : Type _}
+  (C : α → M β)
+  (Q₁ Q₂ : @hyperassertion M _ _ β) :
+  WP C (H.and Q₁ Q₂) = H.and (WP C Q₁) (WP C Q₂) := by
+  apply funext
+  aesop
+
+lemma WP_or {α β : Type _}
+  (C : α → M β)
+  (Q₁ Q₂ : @hyperassertion M _ _ β) :
+  WP C (H.or Q₁ Q₂) = H.or (WP C Q₁) (WP C Q₂) := by
+  apply funext
+  aesop
+
+lemma WP_forall {α β γ : Type _}
+  (C : α → M β)
+  (Q : γ → @hyperassertion M _ _ β) :
+  WP C (H.forall Q) = H.forall (fun x => WP C (Q x)) := by
+  apply funext
+  aesop
+
+lemma WP_exists {α β γ : Type _}
+  (C : α → M β)
+  (Q : γ → @hyperassertion M _ _ β) :
+  WP C (H.exists Q) = H.exists (fun x => WP C (Q x)) := by
+  apply funext
+  aesop
+
+lemma WP_false {α β : Type _}
+  (C : α → M β) :
+  WP C H.false = H.false := by
+  apply funext
+  aesop
+
+
+
+-----------------------------------------
+------ Triples
+-----------------------------------------
 
 
 def triple {α₁ α₂ : Type _}
@@ -206,31 +235,6 @@ lemma rule_cons {α β : Type}
     simp [triple_equiv] at *
     have h := WP_cons C Q
     aesop
-
-
-
-------------------------------------------------
----------------- Base Monads -------------------
-------------------------------------------------
-
----------------- Id ---------------
-
-
-
----------------- Set ---------------
-
-------------------------------------------------
--------- Transformers Instantiations -----------
-------------------------------------------------
-
-
------------- ExceptT ---------------
-
-
------------- ReaderT ---------------
-
-
------------- Logical Variables ---------------
 
 end HHL
 
