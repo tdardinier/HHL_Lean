@@ -163,16 +163,6 @@ lemma if_sync {M : Type _ → Type _} [Monad M] [HHLWithValLawful M]
   have hh := low_semify_if b S (h S hP) C₁ C₂
   aesop
 
-instance : HHLWithValLawful Id where
-  mapElem f := f
-  getVal := some
-  coerce σ h := by contradiction
-  -- getVal_mapElem f σ := rfl
-  inactive C σ σ' h := by contradiction
-  active_congr h C D σ' hcd := by
-    simp [HHL.relWith]
-    aesop
-
 /-
 def dAnd (P : Prop) (Q : P → Prop) : Prop
   := P ∧ ((h : P) → Q h)
@@ -187,81 +177,6 @@ noncomputable def diteClassical {α : Sort _} (P : Prop)
     · exact f h
 -/
 
-instance (M : Type _ → Type _) [Monad M] [LawfulMonad M] [HHLWithVal M]
-  : HHLWithVal (OptionT M) where
-
-  mapElem f := mapElem (Option.map f)
-  getVal σ := Option.join (getVal σ)
-  coerce σ h :=
-    match hv : getVal (M := M) σ with
-    | none => coerce σ (by simp [hv])
-    | some none => mapElem (fun _ => none) σ
-    | some (some v) => by aesop
-
-instance (M : Type _ → Type _) [Monad M] [LawfulMonad M] [HHLWithValLawful M]
-  : HHLWithValLawful (OptionT M) where
-  inactive {α β : Type _}
-    (C : α → OptionT M β) (σ : HHL.elemType (OptionT M) α) (σ' : HHL.elemType (OptionT M) β)
-    (h : (getVal σ).isNone) := by
-    have hor : getVal (M := M) σ = none ∨ getVal (M := M) σ = some none := by
-      simp [getVal, Option.join] at h
-      cases hv : getVal (M := M) σ
-      {
-        left
-        rfl
-      }
-      · aesop
-    simp [HHL.relWith]
-    have hh := inactive (optionify C) σ σ'
-    cases hor
-    {
-      rename_i h_none
-      have hh := inactive (optionify C) σ σ' (by
-        simp [h_none]
-      )
-      sorry
-    }
-    {
-      rename_i h_some_none
-      specialize hh
-      sorry
-    }
-
-  active_congr σ v h C D σ' := by
-    simp [HHL.relWith]
-    have heq : getVal (M := M) σ = some (some v) := by
-      simp [getVal] at h
-      simp [Option.join, Option.bind] at h
-      aesop
-    have hh := active_congr σ v heq (optionify C) (optionify D) σ'
-    aesop
-
-
-instance {σ : Type _} (M : Type _ → Type _) [Monad M] [HHLWithVal M]
-  : HHLWithVal (StateT σ M) where
-  mapElem f p := mapElem (fun p => (f p.1, p.2)) p
-  getVal σ := Option.map Prod.fst (getVal (M := M) σ)
-  coerce {α β : Type _} (σ : HHL.elemType (M := M) (α × σ)) h :=
-    coerce (M := M) σ (by aesop)
-
-instance {σ : Type _} (M : Type _ → Type _) [Monad M] [HHLWithValLawful M]
-  : HHLWithValLawful (StateT σ M) where
-  inactive {α β : Type _}
-    (C : α → StateT σ M β) (p : HHL.elemType (M := M) (α × σ)) (p' : HHL.elemType (M := M) (β × σ))
-    (h : (getVal (M :=  StateT σ M) p).isNone) := by
-    have hh := inactive (M := M) (fun p => C p.1 p.2) p p' (by
-      simp [getVal] at h
-      aesop)
-    aesop
-  active_congr {α β : Type _}
-    (p : HHL.elemType (M := M) (α × σ)) (v : α)
-    (h : getVal (M := StateT σ M) p = some v)
-    (C D : α → StateT σ M β) (p' : HHL.elemType (M := M) (β × σ)) := by
-    simp [getVal] at h
-    rcases h with ⟨s, hv⟩
-    simp [HHL.relWith]
-    have hh := active_congr (M := M) p (v, s) (by aesop) (fun v ↦ C v.1 v.2) (fun v ↦ D v.1 v.2) p'
-    aesop
 
 -- Other classes
 
