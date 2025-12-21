@@ -37,10 +37,23 @@ instance : LawfulMonad Set where
       simp [Bind.bind, Set.bind]
       apply Set.ext
       aesop
-  seqLeft_eq := sorry
-  seqRight_eq := sorry
-  pure_seq := sorry
-  bind_map := sorry
+  seqLeft_eq :=
+    by
+      intros
+      simp [Functor.map, Set.image, SeqLeft.seqLeft, Seq.seq, Set.bind, Set.pure]
+  seqRight_eq :=
+    by
+      intros
+      simp [SeqRight.seqRight, Set.bind, Seq.seq, Functor.map]
+  pure_seq :=
+    by
+      intros
+      simp [pure, Set.pure]
+      simp [Seq.seq, Functor.map, Set.bind, Set.image]
+  bind_map :=
+    by
+      intros
+      simp [Bind.bind, Set.bind, Seq.seq]
 
 def nonterminating : Set Int := do
   while true do
